@@ -1,0 +1,26 @@
+def _open_csv_file(self):
+    file_path = self.csv_file
+
+    if not os.path.exists(file_path):
+        with open(file_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "run_number", "timestamp", "name", "income",
+                    "savings_goal", "reached_goal",
+                    "category", "label", "amount"
+                ],
+            )
+            writer.writeheader()
+
+    try:
+        if os.name == "nt":
+            os.startfile(file_path)
+        elif sys.platform == "darwin":
+            import subprocess
+            subprocess.call(["open", file_path])
+        else:
+            import subprocess
+            subprocess.call(["xdg-open", file_path])
+    except Exception as e:
+        messagebox.showerror("Error", f"Could not open file:\n{e}")
