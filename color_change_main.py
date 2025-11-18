@@ -13,7 +13,7 @@ class BudgetBuddyApp(tk.Tk):
         self.attributes("-fullscreen", True)
 
 
-        self._theme_colors = ["#870000", "#875F00", "#058700", "#002087", "#440087", "#87006A",
+        self._theme_colors = ["#525D6E", "#6E5252", "#6E6852", "#536E52", "#6C526E", "#6E5F52",
                               "#0b1212", "#264040", "#f7f7f7"]
         self.selected_color = random.choice(self._theme_colors)
 
