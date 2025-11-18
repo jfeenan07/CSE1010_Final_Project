@@ -1,0 +1,8 @@
+   #Image
+        self.logo_img = tk.PhotoImage(file=r"D:\Budget.png")
+        self.logo_img = self.logo_img.subsample(8, 8) 
+        container.columnconfigure(1, weight=0)
+
+
+        logo_label = ttk.Label(container, image=self.logo_img)
+        logo_label.grid(row=0, column=0, sticky="nw", padx=250)
