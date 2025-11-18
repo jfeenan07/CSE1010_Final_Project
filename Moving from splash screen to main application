@@ -1,5 +1,0 @@
-def _go_to_main(self, event=None):
-    self.unbind("<Return>")
-    self.unbind("<KP_Enter>")
-    self.splash_frame.destroy()
-    self._build_main_ui()
