@@ -1,0 +1,933 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import csv, os, re, datetime, sys
+import random
+from matplotlib import rcParams
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+class BudgetBuddyApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Budget Buddy")
+        self.attributes("-fullscreen", True)
+
+
+        self._theme_colors = ["#FF0000", "#FFE600", "#15FF00", "#0019FF", "#BB00FF", "#FF00BF",
+                              "#0b1212", "#264040", "#f7f7f7"]
+        self.selected_color = random.choice(self._theme_colors)
+
+        def _ideal_text_color(hex_color):
+            hex_color = hex_color.lstrip("#")
+            r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+            luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+            return "black" if luminance > 0.6 else "white"
+
+        self._theme_text = _ideal_text_color(self.selected_color)
+
+        self.configure(bg=self.selected_color)
+
+        self._style = ttk.Style()
+        try:
+            self._style.theme_use("clam")
+        except Exception:
+            pass
+
+        self._style.configure(".", background=self.selected_color, foreground=self._theme_text)
+        self._style.configure("TFrame", background=self.selected_color)
+        self._style.configure("TLabel", background=self.selected_color, foreground=self._theme_text)
+        self._style.configure("TLabelFrame", background=self.selected_color, foreground=self._theme_text)
+        self._style.configure("TLabelframe", background=self.selected_color, foreground=self._theme_text)
+        self._style.configure("TLabelframe.Label", background=self.selected_color, foreground=self._theme_text)
+        self._style.configure("TButton", background=self.selected_color, foreground=self._theme_text)
+        self._style.map("TButton", background=[("active", self.selected_color)])
+        self._style.configure("TEntry", fieldbackground=self.selected_color, foreground=self._theme_text)
+
+        try:
+            self._style.configure("Treeview", background=self.selected_color, fieldbackground=self.selected_color,
+                                  foreground=self._theme_text)
+            self._style.configure("Treeview.Heading", background=self.selected_color, foreground=self._theme_text)
+        except Exception:
+            pass
+
+        rcParams["figure.facecolor"] = self.selected_color
+        rcParams["axes.facecolor"] = self.selected_color
+        rcParams["text.color"] = self._theme_text
+        rcParams["axes.labelcolor"] = self._theme_text
+        rcParams["xtick.color"] = self._theme_text
+        rcParams["ytick.color"] = self._theme_text
+        rcParams["legend.facecolor"] = self.selected_color
+        rcParams["savefig.facecolor"] = self.selected_color
+
+        self.csv_file = "budget_history.csv"
+        self.run_number = self._get_next_run_number()
+
+        self._palette = [
+            "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
+            "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ab"
+        ]
+        self._category_colors = {}
+        self._next_color_idx = 0
+
+        self._build_splash()
+
+
+    def _parse_money(self, s):
+        """Parse a money string that may contain commas."""
+        try:
+            return float(s.replace(",", "").strip())
+        except Exception:
+            return None
+
+    def _classify_category(self, category: str):
+        c = category.lower()
+
+        essential_keywords = [
+            "rent", "mortgage", "utility", "electric", "water", "gas bill",
+            "insurance", "medical", "hospital", "doctor", "pharmacy",
+            "childcare", "daycare", "tuition", "loan", "debt",
+            "transport", "bus", "train", "fuel"
+        ]
+        grocery_keywords = ["grocery", "groceries", "food", "supermarket"]
+
+        lux_essential_keywords = [
+            "dining", "restaurant", "coffee", "starbucks", "cafe",
+            "fast food", "takeout", "delivery", "uber eats", "doordash",
+            "lyft", "uber", "salon", "beauty", "hair", "nails", "pet", "gym"
+        ]
+
+        nonessential_keywords = [
+            "shopping", "clothes", "clothing", "amazon", "entertainment",
+            "game", "gaming", "subscription", "netflix", "hulu", "spotify",
+            "disney", "travel", "vacation", "trip", "movie", "concert",
+            "hobby", "electronics", "tech", "gadget", "toy", "fun"
+        ]
+
+        if any(k in c for k in essential_keywords) or any(k in c for k in grocery_keywords):
+            return "essential"
+        if any(k in c for k in lux_essential_keywords):
+            return "lux_essential"
+        if any(k in c for k in nonessential_keywords):
+            return "non_essential"
+        return "other"
+
+    def apply_theme(self, widget):
+        """
+        Recursively apply theme colors to tk widgets.
+        ttk widgets are handled via ttk.Style; this function sets bg/fg for tk widgets
+        and some common widget-specific options (Text, Listbox, Canvas, Label, Button).
+        Call this after building a screen to ensure all widgets get themed.
+        """
+        try:
+            if isinstance(widget, tk.Text):
+                widget.configure(background=self.selected_color, foreground=self._theme_text, insertbackground=self._theme_text)
+            elif isinstance(widget, tk.Listbox):
+                widget.configure(background=self.selected_color, foreground=self._theme_text, selectbackground=self._theme_text)
+            elif isinstance(widget, tk.Canvas):
+                widget.configure(background=self.selected_color)
+            elif isinstance(widget, tk.Label):
+                widget.configure(background=self.selected_color, foreground=self._theme_text)
+            elif isinstance(widget, tk.Button):
+                widget.configure(background=self.selected_color, foreground=self._theme_text, activebackground=self.selected_color)
+            elif isinstance(widget, tk.Frame):
+                widget.configure(background=self.selected_color)
+            else:
+                widget.configure(background=self.selected_color)
+        except Exception:
+            pass
+
+
+
+        for child in widget.winfo_children():
+            self.apply_theme(child)
+
+    def _build_splash(self):
+        self.splash_frame = tk.Frame(self, bg="#0b1212")
+        self.splash_frame.pack(fill="both", expand=True)
+
+        content = tk.Frame(self.splash_frame, bg="#0b1212")
+        content.place(relx=0.5, rely=0.5, anchor="center")
+
+        try:
+            img = tk.PhotoImage(file="/mnt/data/ChatGPT Image Nov 12, 2025, 03_01_10 PM.png")
+            img = img.subsample(2, 2)
+            img_label = tk.Label(content, image=img, bg="#0b1212")
+            img_label.image = img
+            img_label.pack(pady=(0, 20))
+        except Exception:
+            pass
+
+        tk.Label(
+            content,
+            text="Hello, I am Budget Buddy\nYour personal budgeting assistant.",
+            font=("Helvetica", 24, "bold"),
+            fg="#d7efe9",
+            bg="#0b1212",
+            justify="center",
+        ).pack(pady=(0, 20))
+
+        tk.Label(
+            content,
+            text="Press Enter to continue",
+            font=("Helvetica", 14),
+            fg="#88bfb0",
+            bg="#0b1212",
+        ).pack()
+
+        open_csv_btn = tk.Button(
+            content,
+            text="Open History CSV File",
+            font=("Helvetica", 16, "bold"),
+            bg="#264040",
+            fg="#e8ffff",
+            activebackground="#335959",
+            activeforeground="white",
+            padx=20,
+            pady=10,
+            relief="raised",
+            bd=3,
+            command=self._open_csv_file
+        )
+        open_csv_btn.pack(pady=(30, 10))
+
+        self.bind("<Return>", self._go_to_main)
+        self.bind("<KP_Enter>", self._go_to_main)
+
+        self.apply_theme(self.splash_frame)
+
+    def _open_csv_file(self):
+        """Open the CSV history file using the system default program."""
+        file_path = self.csv_file
+
+        if not os.path.exists(file_path):
+            with open(file_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(
+                    f,
+                    fieldnames=[
+                        "run_number", "timestamp", "name", "income",
+                        "savings_goal", "reached_goal",
+                        "category", "label", "amount"
+                    ],
+                )
+                writer.writeheader()
+
+        try:
+            if os.name == "nt":  
+                os.startfile(file_path)
+            elif sys.platform == "darwin":  
+                import subprocess
+                subprocess.call(["open", file_path])
+            else: 
+                import subprocess
+                subprocess.call(["xdg-open", file_path])
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open file:\n{e}")
+
+    def _go_to_main(self, event=None):
+        self.unbind("<Return>")
+        self.unbind("<KP_Enter>")
+        self.splash_frame.destroy()
+        self._build_main_ui()
+
+
+    def _build_main_ui(self):
+        self.configure(bg="#f7f7f7")
+
+        self.bind("<F11>", self._toggle_fullscreen)
+        self.bind("<Escape>", self._exit_fullscreen)
+
+        container = ttk.Frame(self, padding=16)
+        container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(4, weight=1)
+
+        title = ttk.Label(container, text="Budget Buddy", font=("Segoe UI", 20, "bold"))
+        title.grid(row=0, column=0, sticky="w")
+
+        subtitle = ttk.Label(container, text="Your personal budgeting assistant", foreground="#555")
+        subtitle.grid(row=1, column=0, sticky="w", pady=(0, 12))
+
+
+        user_frame = ttk.LabelFrame(container, text="Your Info")
+        user_frame.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        for i in range(7):
+            user_frame.columnconfigure(i, weight=1 if i in (1, 3, 5) else 0)
+
+        ttk.Label(user_frame, text="Name").grid(row=0, column=0, padx=8, pady=8, sticky="w")
+        self.name_var = tk.StringVar()
+        self.name_entry = ttk.Entry(user_frame, textvariable=self.name_var)
+        self.name_entry.grid(row=0, column=1, padx=8, pady=8, sticky="ew")
+
+        ttk.Label(user_frame, text="Monthly Income $").grid(row=0, column=2, padx=8, pady=8, sticky="e")
+        self.income_var = tk.StringVar()
+        self.income_entry = ttk.Entry(user_frame, textvariable=self.income_var)
+        self.income_entry.grid(row=0, column=3, padx=8, pady=8, sticky="ew")
+
+        ttk.Label(user_frame, text="Savings Goal $").grid(row=0, column=4, padx=8, pady=8, sticky="e")
+        self.goal_var = tk.StringVar()
+        self.goal_entry = ttk.Entry(user_frame, textvariable=self.goal_var)
+        self.goal_entry.grid(row=0, column=5, padx=8, pady=8, sticky="ew")
+
+        ttk.Button(user_frame, text="Save Info", command=self._save_info).grid(
+            row=1, column=1, sticky="w", pady=(0, 10)
+        )
+
+        # === NOTEBOOK (Expenses + History) ===
+        self.nb = ttk.Notebook(container)
+        self.nb.grid(row=4, column=0, sticky="nsew", pady=(0, 10))
+
+        self.expenses_tab = ttk.Frame(self.nb, padding=10)
+        self.nb.add(self.expenses_tab, text="Expenses")
+        self._build_expenses_tab(self.expenses_tab)
+
+        self.history_tab = ttk.Frame(self.nb, padding=10)
+        self.nb.add(self.history_tab, text="History")
+        self._build_history_tab(self.history_tab)
+
+        # === SUMMARY (above assistance) ===
+        summary = ttk.LabelFrame(container, text="Summary")
+        summary.grid(row=5, column=0, sticky="ew", pady=(0, 5))
+
+        ttk.Label(summary, text="Total Expenses:").grid(row=0, column=0, padx=8, pady=8)
+        self.total_var = tk.StringVar(value="0.00")
+        ttk.Label(summary, textvariable=self.total_var, font=("Segoe UI", 11, "bold")).grid(row=0, column=1)
+
+        ttk.Label(summary, text="Balance:").grid(row=0, column=2, padx=8)
+        self.balance_var = tk.StringVar(value="0.00")
+        ttk.Label(summary, textvariable=self.balance_var, font=("Segoe UI", 11, "bold")).grid(row=0, column=3)
+
+        ttk.Button(summary, text="Calculate", command=self._calculate).grid(row=0, column=4, padx=12)
+        ttk.Button(summary, text="Export to CSV", command=self._export_to_csv).grid(row=0, column=5, padx=12)
+
+        self.assist_frame = ttk.LabelFrame(container, text="Budget Assistance")
+        self.assist_frame.grid(row=6, column=0, sticky="ew", pady=(5, 10))
+
+        self.assist_text = tk.Text(self.assist_frame, height=4, wrap="word")
+        self.assist_text.pack(fill="both", expand=True, padx=8, pady=8)
+        self.assist_text.insert("end", "Press 'Calculate' to see savings advice.")
+        self.assist_text.config(state="disabled")
+
+        self.nb.bind("<<NotebookTabChanged>>", self._on_tab_change)
+
+        self._build_expenses_tab_navigation()
+
+        self.apply_theme(self)
+
+    def _build_expenses_tab_navigation(self):
+        self.name_entry.bind("<Return>", lambda e: self.income_entry.focus_set())
+        self.name_entry.bind("<KP_Enter>", lambda e: self.income_entry.focus_set())
+
+        self.income_entry.bind("<Return>", lambda e: self.goal_entry.focus_set())
+        self.income_entry.bind("<KP_Enter>", lambda e: self.goal_entry.focus_set())
+
+        self.goal_entry.bind("<Return>", lambda e: self.category_entry.focus_set())
+        self.goal_entry.bind("<KP_Enter>", lambda e: self.category_entry.focus_set())
+
+        self.category_entry.bind("<Return>", lambda e: self.label_entry.focus_set())
+        self.category_entry.bind("<KP_Enter>", lambda e: self.label_entry.focus_set())
+
+        self.label_entry.bind("<Return>", lambda e: self.amount_entry.focus_set())
+        self.label_entry.bind("<KP_Enter>", lambda e: self.amount_entry.focus_set())
+
+        self.amount_entry.bind("<Return>", self._on_amount_enter)
+        self.amount_entry.bind("<KP_Enter>", self._on_amount_enter)
+
+        self.name_entry.focus_set()
+
+    def _build_expenses_tab(self, frame):
+        frame.columnconfigure(0, weight=3)
+        frame.columnconfigure(1, weight=2)
+        frame.rowconfigure(1, weight=1)
+
+        left = ttk.Frame(frame)
+        left.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 10))
+
+        in_frame = ttk.LabelFrame(left, text="Add Expense")
+        in_frame.pack(fill="x", pady=(0, 8))
+        in_frame.columnconfigure(1, weight=1)
+        in_frame.columnconfigure(3, weight=1)
+
+        ttk.Label(in_frame, text="Category").grid(row=0, column=0, padx=8, pady=8)
+        self.category_var = tk.StringVar()
+        self.category_entry = ttk.Entry(in_frame, textvariable=self.category_var)
+        self.category_entry.grid(row=0, column=1, padx=(0, 8), pady=8, sticky="ew")
+
+        ttk.Label(in_frame, text="Label").grid(row=0, column=2, padx=8, pady=8)
+        self.label_var = tk.StringVar()
+        self.label_entry = ttk.Entry(in_frame, textvariable=self.label_var)
+        self.label_entry.grid(row=0, column=3, padx=(0, 8), pady=8, sticky="ew")
+
+        ttk.Label(in_frame, text="Amount $").grid(row=0, column=4, padx=8, pady=8)
+        self.amount_var = tk.StringVar()
+        self.amount_entry = ttk.Entry(in_frame, textvariable=self.amount_var, width=14)
+        self.amount_entry.grid(row=0, column=5, padx=(0, 8), pady=8)
+
+        self.add_button = ttk.Button(in_frame, text="Add", command=self._add_expense)
+        self.add_button.grid(row=0, column=6, padx=8)
+
+        self.expense_list = tk.Listbox(left, height=15)
+        self.expense_list.pack(fill="both", expand=True, padx=8, pady=8)
+
+        btn_frame = ttk.Frame(left)
+        btn_frame.pack(fill="x", padx=8, pady=(0, 8))
+        self.reset_button = ttk.Button(btn_frame, text="Reset Session", command=self._reset_session)
+        self.reset_button.pack(side="right")
+
+        right = ttk.Frame(frame)
+        right.grid(row=0, column=1, rowspan=2, sticky="nsew")
+
+        self.pie_fig = Figure(figsize=(4, 3), dpi=100)
+        self.pie_ax = self.pie_fig.add_subplot(111)
+        self.pie_fig.patch.set_alpha(0.0)
+        self.pie_ax.set_facecolor("none")
+
+        self.pie_canvas = FigureCanvasTkAgg(self.pie_fig, master=right)
+        self.pie_canvas.get_tk_widget().pack(fill="both", expand=True)
+
+        self._update_pie()
+
+        self.apply_theme(frame)
+
+
+    def _build_history_tab(self, frame):
+        columns = ("run_number", "details", "category", "label", "amount")
+        self.history_table = ttk.Treeview(
+            frame,
+            columns=columns,
+            show="tree headings",
+            height=15,
+        )
+
+        self.history_table.heading("#0", text="")
+        self.history_table.column("#0", width=20, stretch=False)
+
+        self.history_table.heading("run_number", text="Run Number")
+        self.history_table.heading("details", text="Details")
+        self.history_table.heading("category", text="Category")
+        self.history_table.heading("label", text="Label")
+        self.history_table.heading("amount", text="Amount")
+
+        self.history_table.column("run_number", width=90, anchor="center")
+        self.history_table.column("details", width=650, anchor="w", stretch=True)
+        self.history_table.column("category", width=120, anchor="center")
+        self.history_table.column("label", width=160, anchor="center")
+        self.history_table.column("amount", width=100, anchor="e")
+
+        self.history_table.pack(fill="both", expand=True, padx=8, pady=8)
+
+        ttk.Button(frame, text="🗑️ Clear All History", command=self._clear_history).pack(pady=8)
+
+        self.apply_theme(frame)
+
+    def _on_tab_change(self, event):
+        tab = event.widget.tab(event.widget.select(), "text")
+        if tab == "History":
+            self._load_history()
+
+    def _load_history(self):
+        for row in self.history_table.get_children():
+            self.history_table.delete(row)
+
+        if not os.path.exists(self.csv_file):
+            return
+
+        runs = {}
+        with open(self.csv_file, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                try:
+                    rn = int(r["run_number"])
+                except Exception:
+                    continue
+
+                name = r.get("name", "").strip()
+                income = float(r.get("income", 0) or 0)
+                goal = float(r.get("savings_goal", 0) or 0)
+                reached = r.get("reached_goal", "No")
+                timestamp_raw = r.get("timestamp", "")
+                category = r.get("category", "")
+                label = r.get("label", "")
+                amount = float(r.get("amount", 0) or 0)
+
+                if rn not in runs:
+                    runs[rn] = {
+                        "name": name,
+                        "income": income,
+                        "goal": goal,
+                        "reached": reached,
+                        "timestamp": timestamp_raw,
+                        "total": 0.0,
+                        "items": [],
+                    }
+                runs[rn]["total"] += amount
+                runs[rn]["items"].append((category, label, amount))
+
+        for rn in sorted(runs.keys()):
+            data = runs[rn]
+            pretty_ts = self._format_timestamp_pretty(data["timestamp"])
+            status_text = "Reached Goal" if str(data["reached"]).lower() == "yes" else "Did Not Reach Goal"
+            total_str = f"${data['total']:,.2f}"
+            goal_str = f"${data['goal']:,.2f}"
+
+            details_text = f"{data['name']} ({pretty_ts})"
+            details_full = (
+                f"{details_text} — Income: ${data['income']:,.2f} — "
+                f"Goal: {goal_str} — Total Spent: {total_str} — {status_text}"
+            )
+
+            parent_id = self.history_table.insert(
+                "",
+                "end",
+                text="",
+                values=(rn, details_full, "", "", ""),
+                open=False,
+            )
+
+            for category, label, amount in data["items"]:
+                self.history_table.insert(
+                    parent_id,
+                    "end",
+                    text="",
+                    values=(
+                        "",
+                        "",
+                        category,
+                        label,
+                        f"${amount:,.2f}",
+                    ),
+                )
+
+    def _format_timestamp_pretty(self, ts_str):
+        try:
+            dt = datetime.datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+            return dt.strftime("%b %d, %Y at %I:%M %p")
+        except Exception:
+            return ts_str or "Unknown time"
+
+    def _clear_history(self):
+        if not os.path.exists(self.csv_file):
+            messagebox.showinfo("No history", "No history to clear.")
+            return
+        if messagebox.askyesno("Confirm", "Delete all history?"):
+            os.remove(self.csv_file)
+            for row in self.history_table.get_children():
+                self.history_table.delete(row)
+            messagebox.showinfo("Cleared", "History cleared successfully.")
+            self.run_number = 1
+
+
+    def _save_info(self):
+        name = self.name_var.get().strip()
+        if not re.match(r"^[A-Za-z]+(?:[ '-][A-Za-z]+)*$", name):
+            messagebox.showerror("Invalid Name", "Please enter a valid name.")
+            return
+
+        income = self._parse_money(self.income_var.get())
+        if income is None:
+            messagebox.showerror("Invalid Income", "Please enter a valid number for income.")
+            return
+
+        goal = self._parse_money(self.goal_var.get()) if self.goal_var.get().strip() else 0.0
+        if goal is None:
+            messagebox.showerror("Invalid Goal", "Please enter a valid number for savings goal.")
+            return
+
+        msg = f"Welcome, {name}!\n\nIncome: ${income:,.2f}"
+        if goal > 0:
+            msg += f"\nSavings Goal: ${goal:,.2f}"
+        messagebox.showinfo("Saved", msg)
+
+    def _on_amount_enter(self, event=None):
+        self._add_expense()
+        return "break"
+
+    def _parse_expense_item(self, item):
+        """
+        Parse a line from expense_list.
+        Format: "Category | Label — $amount"
+        """
+        try:
+            cat_part, rest = item.split("|", 1)
+            category = cat_part.strip()
+            label_part, amount_str = rest.split("— $")
+            label = label_part.strip()
+            amount = float(amount_str)
+            return category, label, amount
+        except Exception:
+            return None, None, None
+
+    def _add_expense(self):
+        amt = self._parse_money(self.amount_var.get())
+        if amt is None:
+            messagebox.showerror("Invalid", "Please enter a valid amount.")
+            return
+
+        category_raw = (self.category_var.get() or "General").strip()
+        label_raw = (self.label_var.get() or "Unnamed").strip()
+
+        category = category_raw.title()
+        label = label_raw.title()
+
+        line = f"{category} | {label} — ${amt:.2f}"
+        self.expense_list.insert(tk.END, line)
+
+        self._update_totals()
+        self._update_pie()
+
+        self.category_var.set("")
+        self.label_var.set("")
+        self.amount_var.set("")
+        self.category_entry.focus_set()
+
+    def _reset_session(self):
+        if self.expense_list.size() == 0:
+            messagebox.showinfo("Nothing to clear", "There are no expenses in this session.")
+            return
+        if messagebox.askyesno("Reset Session", "Clear all current expenses for this session?"):
+            self.expense_list.delete(0, tk.END)
+            self.total_var.set("0.00")
+            self.balance_var.set("0.00")
+            self._update_pie()
+            self.category_var.set("")
+            self.label_var.set("")
+            self.amount_var.set("")
+            self.category_entry.focus_set()
+
+    def _update_totals(self):
+        total = 0
+        for item in self.expense_list.get(0, tk.END):
+            _, _, amt = self._parse_expense_item(item)
+            if amt is not None:
+                total += amt
+        self.total_var.set(f"{total:,.2f}")
+
+    def _calculate(self):
+        income = self._parse_money(self.income_var.get())
+        if income is None:
+            messagebox.showerror("Missing Info", "Enter your income first.")
+            return
+        total = self._parse_money(self.total_var.get()) or 0.0
+        balance = income - total
+        self.balance_var.set(f"{balance:,.2f}")
+
+        msg = "You're doing great!" if balance > 0 else "You're over budget!"
+        messagebox.showinfo("Result", msg)
+
+        self._update_assistance()
+
+    def _export_to_csv(self):
+        name = self.name_var.get().strip()
+        if not name:
+            messagebox.showerror("Missing Info", "Please enter your name first.")
+            return
+
+        income = self._parse_money(self.income_var.get())
+        if income is None:
+            messagebox.showerror("Missing Info", "Please enter a valid income.")
+            return
+
+        goal = self._parse_money(self.goal_var.get()) if self.goal_var.get().strip() else 0.0
+        if goal is None:
+            messagebox.showerror("Missing Info", "Please enter a valid savings goal.")
+            return
+
+        if self.expense_list.size() == 0:
+            messagebox.showerror("No Data", "No expenses to export.")
+            return
+
+        total = self._parse_money(self.total_var.get()) or 0.0
+        balance = income - total
+        reached_goal = "Yes" if goal > 0 and balance >= goal else "No"
+
+        file_exists = os.path.exists(self.csv_file)
+        with open(self.csv_file, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "run_number", "timestamp", "name", "income",
+                    "savings_goal", "reached_goal",
+                    "category", "label", "amount"
+                ],
+            )
+            if not file_exists:
+                writer.writeheader()
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            for item in self.expense_list.get(0, tk.END):
+                category, label, amount = self._parse_expense_item(item)
+                if amount is None:
+                    continue
+                writer.writerow(
+                    {
+                        "run_number": self.run_number,
+                        "timestamp": timestamp,
+                        "name": name,
+                        "income": income,
+                        "savings_goal": goal,
+                        "reached_goal": reached_goal,
+                        "category": category,
+                        "label": label,
+                        "amount": amount,
+                    }
+                )
+        messagebox.showinfo("Exported", "Data exported successfully!")
+        self.run_number += 1  # next run
+
+    def _get_next_run_number(self):
+        if not os.path.exists(self.csv_file):
+            return 1
+        try:
+            with open(self.csv_file, newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                runs = [int(r["run_number"]) for r in reader if r.get("run_number")]
+                return max(runs) + 1 if runs else 1
+        except Exception:
+            return 1
+
+    def _assign_color(self, category):
+        if category not in self._category_colors:
+            color = self._palette[self._next_color_idx % len(self._palette)]
+            self._category_colors[category] = color
+            self._next_color_idx += 1
+        return self._category_colors[category]
+
+    def _parse_expenses_by_category(self):
+        totals = {}
+        for item in self.expense_list.get(0, tk.END):
+            category, _, amt = self._parse_expense_item(item)
+            if category is None or amt is None:
+                continue
+            totals[category] = totals.get(category, 0.0) + amt
+        return totals
+
+    def _update_pie(self):
+        self.pie_ax.clear()
+
+        totals = self._parse_expenses_by_category()
+        if not totals:
+            self.pie_ax.text(
+                0.5, 0.5, "No data yet", ha="center", va="center", fontsize=12, color="#555"
+            )
+            self.pie_ax.axis("off")
+            self.pie_canvas.draw()
+            return
+
+        categories = list(totals.keys())
+        sizes = [totals[c] for c in categories]
+        colors = [self._assign_color(c) for c in categories]
+
+        idx_holder = {"i": 0}
+
+        def _autopct(pct):
+            i = idx_holder["i"]
+            label = categories[i]
+            idx_holder["i"] += 1
+            if pct < 3:
+                return ""
+            return f"{label}\n{pct:.0f}%"
+
+        textprops = {"color": self._theme_text, "fontsize": 9, "ha": "center", "va": "center"}
+        wedges, _texts, _autotexts = self.pie_ax.pie(
+            sizes,
+            labels=None,
+            autopct=_autopct,
+            startangle=90,
+            colors=colors,
+            pctdistance=0.7,
+            textprops=textprops,
+        )
+        self.pie_ax.axis("equal")
+
+        legend_labels = [f"{c} (${totals[c]:,.2f})" for c in categories]
+        leg = self.pie_ax.legend(
+            wedges,
+            legend_labels,
+            title="Categories",
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            borderaxespad=0.0,
+            fontsize=9,
+        )
+        for text in leg.get_texts():
+            text.set_color(self._theme_text)
+        try:
+            leg.get_title().set_color(self._theme_text)
+        except Exception:
+            pass
+
+        self.pie_fig.patch.set_alpha(0.0)
+        self.pie_ax.set_facecolor("none")
+
+        self.pie_canvas.draw()
+
+    def _update_assistance(self):
+        income = self._parse_money(self.income_var.get())
+        goal = self._parse_money(self.goal_var.get()) if self.goal_var.get().strip() else 0.0
+        total_expenses = self._parse_money(self.total_var.get()) or 0.0
+        category_totals = self._parse_expenses_by_category()
+
+        text = self._build_assistance_text(income, goal, total_expenses, category_totals)
+
+        self.assist_text.config(state="normal")
+        self.assist_text.delete("1.0", "end")
+        self.assist_text.insert("end", text)
+        self.assist_text.config(state="disabled")
+
+    def _build_assistance_text(self, income, goal, total_expenses, cat_totals):
+        if income is None:
+            return (
+                "Please enter a valid income and savings goal, "
+                "then press 'Calculate' to see your savings advice."
+            )
+
+        balance = income - total_expenses
+        lines = []
+        lines.append(f"Expenses: ${total_expenses:,.2f}")
+        lines.append(f"Income: ${income:,.2f}")
+        lines.append(f"Savings Goal: ${goal:,.2f}")
+        lines.append(f"Balance After Expenses: ${balance:,.2f}")
+
+        if goal and goal > 0:
+            gap = goal - balance
+            if gap <= 0:
+                lines.append("You are meeting or exceeding your savings goal. 🎉")
+            else:
+                lines.append(f"You are ${gap:,.2f} away from your savings goal.")
+        else:
+            lines.append("No positive savings goal set yet.")
+
+        lines.append("")
+
+        if goal is None or goal <= 0:
+            lines.append(
+                "Set a monthly savings goal to get more personalized suggestions.\n"
+                "Once you have a goal, I'll help you find gentle ways to reach it. 💚"
+            )
+            return "\n".join(lines)
+
+        if balance >= goal:
+            extra = balance - goal
+            lines.append("Amazing job! You reached your savings goal this month 🎉")
+            if extra > 0:
+                lines.append(
+                    f"You even went ${extra:,.2f} beyond your goal. "
+                    "You could add this to savings or treat yourself a little!"
+                )
+            lines.append(
+                "Try keeping your non-essential spending steady or trimming it slightly "
+                "to stay on track in future months."
+            )
+            return "\n".join(lines)
+
+        shortfall = goal - balance
+
+        if not cat_totals:
+            lines.append(
+                "You're a bit short of your goal, and there are no detailed expenses added yet.\n"
+                "Try adding more categorized expenses so I can suggest where to adjust."
+            )
+            return "\n".join(lines)
+
+        non_essential = []
+        lux_essential = []
+        essential = []
+        other = []
+
+        for cat, amt in cat_totals.items():
+            cat_type = self._classify_category(cat)
+            if cat_type == "non_essential":
+                non_essential.append((cat, amt))
+            elif cat_type == "lux_essential":
+                lux_essential.append((cat, amt))
+            elif cat_type == "essential":
+                essential.append((cat, amt))
+            else:
+                other.append((cat, amt))
+
+        non_essential.sort(key=lambda x: x[1], reverse=True)
+        lux_essential.sort(key=lambda x: x[1], reverse=True)
+        essential.sort(key=lambda x: x[1], reverse=True)
+        other.sort(key=lambda x: x[1], reverse=True)
+
+        lines.append("You're doing your best, and that's what matters. 💚")
+        lines.append(
+            f"To move closer to your savings goal, let's gently adjust your spending "
+            f"starting with non-essential areas first."
+        )
+
+        remaining_gap = shortfall
+
+        if non_essential:
+            lines.append("")
+            lines.append("🔸 Start with non-essential spending (easiest to adjust):")
+            for cat, amt in non_essential[:3]:
+                suggested_cut = min(remaining_gap, amt * 0.3)
+                if suggested_cut <= 1:
+                    continue
+                pct = suggested_cut / max(amt, 1) * 100
+                lines.append(
+                    f"• {cat}: consider lowering by about ${suggested_cut:,.2f} "
+                    f"(around {pct:.0f}%)."
+                )
+                remaining_gap -= suggested_cut
+                if remaining_gap <= 0:
+                    break
+
+        if remaining_gap > 0 and lux_essential:
+            lines.append("")
+            lines.append(
+                "🔹 Next, gently adjust 'luxury essentials' "
+                "(things that are nice to have but can be slightly reduced):"
+            )
+            for cat, amt in lux_essential[:3]:
+                suggested_cut = min(remaining_gap, amt * 0.2)
+                if suggested_cut <= 1:
+                    continue
+                pct = suggested_cut / max(amt, 1) * 100
+                lines.append(
+                    f"• {cat}: try reducing by around ${suggested_cut:,.2f} "
+                    f"({pct:.0f}% of that category)."
+                )
+                remaining_gap -= suggested_cut
+                if remaining_gap <= 0:
+                    break
+
+        if remaining_gap > 0 and essential:
+            lines.append("")
+            lines.append(
+                "🔻 Your essential costs are also quite high. "
+                "If possible, look for long-term ways to ease them (no pressure):"
+            )
+            for cat, amt in essential[:2]:
+                lines.append(
+                    f"• {cat}: consider comparing prices, negotiating rates, "
+                    "or planning ahead to reduce this over time."
+                )
+
+        if remaining_gap > 0:
+            lines.append("")
+            lines.append(
+                "Your savings goal is wonderfully ambitious. Right now, your income and "
+                "essential expenses make it a bit challenging to reach this goal fully.\n"
+                "You might gently lower your goal for this month or spread the goal over "
+                "a few months. Small, consistent progress still counts as success. 🌱"
+            )
+
+        lines.append("")
+        lines.append("You're on the right track. Even small changes add up over time. You've got this! 💪")
+
+        return "\n".join(lines)
+
+  
+    def _toggle_fullscreen(self, event=None):
+        state = not self.attributes("-fullscreen")
+        self.attributes("-fullscreen", state)
+        return "break"
+
+    def _exit_fullscreen(self, event=None):
+        self.attributes("-fullscreen", False)
+        return "break"
+
+
+if __name__ == "__main__":
+    app = BudgetBuddyApp()
+    app.mainloop()
