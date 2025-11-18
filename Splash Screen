@@ -1,0 +1,51 @@
+def _build_splash(self):
+    self.splash_frame = tk.Frame(self, bg="#0b1212")
+    self.splash_frame.pack(fill="both", expand=True)
+
+    content = tk.Frame(self.splash_frame, bg="#0b1212")
+    content.place(relx=0.5, rely=0.5, anchor="center")
+
+    try:
+        img = tk.PhotoImage(file="/mnt/data/ChatGPT Image Nov 12, 2025, 03_01_10 PM.png")
+        img = img.subsample(2, 2)
+        img_label = tk.Label(content, image=img, bg="#0b1212")
+        img_label.image = img
+        img_label.pack(pady=(0, 20))
+    except Exception:
+        pass
+
+    tk.Label(
+        content,
+        text="Hello, I am Budget Buddy\nYour personal budgeting assistant.",
+        font=("Helvetica", 24, "bold"),
+        fg="#d7efe9",
+        bg="#0b1212",
+        justify="center",
+    ).pack(pady=(0, 20))
+
+    tk.Label(
+        content,
+        text="Press Enter to continue",
+        font=("Helvetica", 14),
+        fg="#88bfb0",
+        bg="#0b1212",
+    ).pack()
+
+    open_csv_btn = tk.Button(
+        content,
+        text="Open History CSV File",
+        font=("Helvetica", 16, "bold"),
+        bg="#264040",
+        fg="#e8ffff",
+        activebackground="#335959",
+        activeforeground="white",
+        padx=20,
+        pady=10,
+        relief="raised",
+        bd=3,
+        command=self._open_csv_file
+    )
+    open_csv_btn.pack(pady=(30, 10))
+
+    self.bind("<Return>", self._go_to_main)
+    self.bind("<KP_Enter>", self._go_to_main)
