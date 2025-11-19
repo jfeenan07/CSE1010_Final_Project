@@ -1,7 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import csv, os, re, datetime, sys
-import random
 from matplotlib import rcParams
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -12,59 +11,102 @@ class BudgetBuddyApp(tk.Tk):
         super().__init__()
         self.title("Budget Buddy")
         self.attributes("-fullscreen", True)
-        
 
-    #### ===============
-        ## The color theme code 
-    #### ===============
+        # ==========================
+        # FIXED PROFESSIONAL THEME
+        # ==========================
+        self.bg_main = "#f2f2f2"      # main background
+        self.bg_panels = "#e5e1da"    # soft panel color
+        self.fg_text = "#222222"      # dark text
+        self.accent = "#3a7bd5"       # accent blue
 
+        self.configure(bg=self.bg_main)
 
-        self._theme_colors = ["#870000", "#875F00", "#058700", "#002087", "#440087", "#87006A",
-                              "#0b1212", "#264040", "#f7f7f7"]
-        self.selected_color = random.choice(self._theme_colors)
-
-        def _ideal_text_color(hex_color):
-            hex_color = hex_color.lstrip("#")
-            r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-            luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
-            return "black" if luminance > 0.6 else "white"
-
-        self._theme_text = _ideal_text_color(self.selected_color)
-
-        self.configure(bg=self.selected_color)
-
-        self._style = ttk.Style()
+        # ttk styling
+        self._style = ttk.Style(self)
         try:
             self._style.theme_use("clam")
         except Exception:
             pass
 
-        self._style.configure(".", background=self.selected_color, foreground=self._theme_text)
-        self._style.configure("TFrame", background=self.selected_color)
-        self._style.configure("TLabel", background=self.selected_color, foreground=self._theme_text)
-        self._style.configure("TLabelFrame", background=self.selected_color, foreground=self._theme_text)
-        self._style.configure("TLabelframe", background=self.selected_color, foreground=self._theme_text)
-        self._style.configure("TLabelframe.Label", background=self.selected_color, foreground=self._theme_text)
-        self._style.configure("TButton", background=self.selected_color, foreground=self._theme_text)
-        self._style.map("TButton", background=[("active", self.selected_color)])
-        self._style.configure("TEntry", fieldbackground=self.selected_color, foreground=self._theme_text)
+        # Base
+        self._style.configure(
+            ".",
+            background=self.bg_main,
+            foreground=self.fg_text,
+            font=("Segoe UI", 10)
+        )
 
+        # Frames / LabelFrames
+        self._style.configure("TFrame", background=self.bg_main)
+        self._style.configure(
+            "TLabelframe",
+            background=self.bg_panels,
+            foreground=self.fg_text
+        )
+        self._style.configure(
+            "TLabelframe.Label",
+            background=self.bg_panels,
+            foreground=self.fg_text,
+            font=("Segoe UI", 10, "bold")
+        )
+
+        # Labels
+        self._style.configure(
+            "TLabel",
+            background=self.bg_panels,
+            foreground=self.fg_text
+        )
+
+        # Buttons
+        self._style.configure(
+            "TButton",
+            background=self.accent,
+            foreground="white",
+            padding=6
+        )
+        self._style.map(
+            "TButton",
+            background=[("active", "#2f69c2")]
+        )
+
+        # Entries
+        self._style.configure(
+            "TEntry",
+            fieldbackground="white",
+            foreground=self.fg_text
+        )
+
+        # Treeview
         try:
-            self._style.configure("Treeview", background=self.selected_color, fieldbackground=self.selected_color,
-                                  foreground=self._theme_text)
-            self._style.configure("Treeview.Heading", background=self.selected_color, foreground=self._theme_text)
+            self._style.configure(
+                "Treeview",
+                background="white",
+                fieldbackground="white",
+                foreground=self.fg_text,
+            )
+            self._style.configure(
+                "Treeview.Heading",
+                background=self.bg_panels,
+                foreground=self.fg_text,
+                font=("Segoe UI", 9, "bold")
+            )
         except Exception:
             pass
 
-        rcParams["figure.facecolor"] = self.selected_color
-        rcParams["axes.facecolor"] = self.selected_color
-        rcParams["text.color"] = self._theme_text
-        rcParams["axes.labelcolor"] = self._theme_text
-        rcParams["xtick.color"] = self._theme_text
-        rcParams["ytick.color"] = self._theme_text
-        rcParams["legend.facecolor"] = self.selected_color
-        rcParams["savefig.facecolor"] = self.selected_color
+        # Matplotlib colors
+        rcParams["figure.facecolor"] = self.bg_panels
+        rcParams["axes.facecolor"] = self.bg_panels
+        rcParams["text.color"] = self.fg_text
+        rcParams["axes.labelcolor"] = self.fg_text
+        rcParams["xtick.color"] = self.fg_text
+        rcParams["ytick.color"] = self.fg_text
+        rcParams["legend.facecolor"] = self.bg_panels
+        rcParams["savefig.facecolor"] = self.bg_panels
 
+        # ==========================
+        # DATA & PALETTE
+        # ==========================
         self.csv_file = "budget_history.csv"
         self.run_number = self._get_next_run_number()
 
@@ -77,24 +119,17 @@ class BudgetBuddyApp(tk.Tk):
 
         self._build_splash()
 
-
-
-
     # ==============================
     # SMALL HELPERS
     # ==============================
     def _parse_money(self, s):
-        """Parse a money string that may contain commas."""
         try:
             return float(s.replace(",", "").strip())
         except Exception:
             return None
 
-    # classify category for advice
     def _classify_category(self, category: str):
         c = category.lower()
-
-        # Essentials: try not to cut
         essential_keywords = [
             "rent", "mortgage", "utility", "electric", "water", "gas bill",
             "insurance", "medical", "hospital", "doctor", "pharmacy",
@@ -102,13 +137,11 @@ class BudgetBuddyApp(tk.Tk):
             "transport", "bus", "train", "fuel"
         ]
         grocery_keywords = ["grocery", "groceries", "food", "supermarket"]
-
         lux_essential_keywords = [
             "dining", "restaurant", "coffee", "starbucks", "cafe",
             "fast food", "takeout", "delivery", "uber eats", "doordash",
             "lyft", "uber", "salon", "beauty", "hair", "nails", "pet", "gym"
         ]
-
         nonessential_keywords = [
             "shopping", "clothes", "clothing", "amazon", "entertainment",
             "game", "gaming", "subscription", "netflix", "hulu", "spotify",
@@ -134,13 +167,12 @@ class BudgetBuddyApp(tk.Tk):
         content = tk.Frame(self.splash_frame, bg="#0b1212")
         content.place(relx=0.5, rely=0.5, anchor="center")
 
-        # Optional logo/image
+        # Center logo
         try:
-            img = tk.PhotoImage(file="/mnt/data/ChatGPT Image Nov 12, 2025, 03_01_10 PM.png")
-            img = img.subsample(2, 2)
-            img_label = tk.Label(content, image=img, bg="#0b1212")
-            img_label.image = img
-            img_label.pack(pady=(0, 20))
+            self.logo_img_splash = tk.PhotoImage(file=r"/Users/jamesfeenan/Downloads/Budget.png")
+            self.logo_img_splash = self.logo_img_splash.subsample(3, 3)
+            logo_label = tk.Label(content, image=self.logo_img_splash, bg="#0b1212")
+            logo_label.pack(pady=(0, 20))
         except Exception:
             pass
 
@@ -161,7 +193,6 @@ class BudgetBuddyApp(tk.Tk):
             bg="#0b1212",
         ).pack()
 
-        # Open CSV button with clear text
         open_csv_btn = tk.Button(
             content,
             text="Open History CSV File",
@@ -178,15 +209,11 @@ class BudgetBuddyApp(tk.Tk):
         )
         open_csv_btn.pack(pady=(30, 10))
 
-        # ONLY Enter goes forward
         self.bind("<Return>", self._go_to_main)
         self.bind("<KP_Enter>", self._go_to_main)
 
     def _open_csv_file(self):
-        """Open the CSV history file using the system default program."""
         file_path = self.csv_file
-
-        # If it doesn't exist, create empty with header
         if not os.path.exists(file_path):
             with open(file_path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(
@@ -200,12 +227,12 @@ class BudgetBuddyApp(tk.Tk):
                 writer.writeheader()
 
         try:
-            if os.name == "nt":  # Windows
+            if os.name == "nt":
                 os.startfile(file_path)
-            elif sys.platform == "darwin":  # macOS
+            elif sys.platform == "darwin":
                 import subprocess
                 subprocess.call(["open", file_path])
-            else:  # Linux / other
+            else:
                 import subprocess
                 subprocess.call(["xdg-open", file_path])
         except Exception as e:
@@ -221,21 +248,44 @@ class BudgetBuddyApp(tk.Tk):
     # MAIN UI
     # ==============================
     def _build_main_ui(self):
-        self.configure(bg="#f7f7f7")
-
+        self.configure(bg=self.bg_main)
         self.bind("<F11>", self._toggle_fullscreen)
         self.bind("<Escape>", self._exit_fullscreen)
 
         container = ttk.Frame(self, padding=16)
         container.pack(fill="both", expand=True)
         container.columnconfigure(0, weight=1)
-        container.rowconfigure(4, weight=1)  # notebook row gets stretch
+        container.rowconfigure(4, weight=1)
 
-        title = ttk.Label(container, text="Budget Buddy", font=("Segoe UI", 20, "bold"))
-        title.grid(row=0, column=0, sticky="w")
+        # Top section with logo + title
+        top_frame = ttk.Frame(container)
+        top_frame.grid(row=0, column=0, sticky="ew")
+        top_frame.columnconfigure(1, weight=1)
 
-        subtitle = ttk.Label(container, text="Your personal budgeting assistant", foreground="#555")
-        subtitle.grid(row=1, column=0, sticky="w", pady=(0, 12))
+        try:
+            self.logo_img_main = tk.PhotoImage(file=r"/Users/jamesfeenan/Downloads/Budget.png")
+            self.logo_img_main = self.logo_img_main.subsample(8, 8)
+            logo_label = ttk.Label(top_frame, image=self.logo_img_main)
+            logo_label.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 10), pady=(0, 5))
+        except Exception:
+            pass
+
+        title = tk.Label(
+            top_frame,
+            text="Budget Buddy",
+            font=("Segoe UI", 20, "bold"),
+            bg=self.bg_main,
+            fg=self.accent,
+        )
+        title.grid(row=0, column=1, sticky="w", pady=(5, 0))
+
+        subtitle = tk.Label(
+            top_frame,
+            text="Your personal budgeting assistant",
+            fg="#555555",
+            bg=self.bg_main,
+        )
+        subtitle.grid(row=1, column=1, sticky="w", pady=(0, 12))
 
         # === USER INFO ===
         user_frame = ttk.LabelFrame(container, text="Your Info")
@@ -262,7 +312,7 @@ class BudgetBuddyApp(tk.Tk):
             row=1, column=1, sticky="w", pady=(0, 10)
         )
 
-        # === NOTEBOOK (Expenses + History) ===
+        # === NOTEBOOK ===
         self.nb = ttk.Notebook(container)
         self.nb.grid(row=4, column=0, sticky="nsew", pady=(0, 10))
 
@@ -274,7 +324,7 @@ class BudgetBuddyApp(tk.Tk):
         self.nb.add(self.history_tab, text="History")
         self._build_history_tab(self.history_tab)
 
-        # === SUMMARY (above assistance) ===
+        # === SUMMARY ===
         summary = ttk.LabelFrame(container, text="Summary")
         summary.grid(row=5, column=0, sticky="ew", pady=(0, 5))
 
@@ -288,47 +338,35 @@ class BudgetBuddyApp(tk.Tk):
 
         ttk.Button(summary, text="Calculate", command=self._calculate).grid(row=0, column=4, padx=12)
         ttk.Button(summary, text="Export to CSV", command=self._export_to_csv).grid(row=0, column=5, padx=12)
+        ttk.Button(summary, text="Open CSV File", command=self._open_csv_file).grid(row=0, column=6, padx=12)
 
-        # === BUDGET ASSISTANCE (FULL WIDTH, between summary and pie chart) ===
+        # === BUDGET ASSISTANCE ===
         self.assist_frame = ttk.LabelFrame(container, text="Budget Assistance")
-        # row 6: directly under summary, above the notebook/pie visually
         self.assist_frame.grid(row=6, column=0, sticky="ew", pady=(5, 10))
-
-        self.assist_text = tk.Text(self.assist_frame, height=4, wrap="word")
+        self.assist_text = tk.Text(self.assist_frame, height=4, wrap="word", bg="#111111", fg="#f4f4f4")
         self.assist_text.pack(fill="both", expand=True, padx=8, pady=8)
         self.assist_text.insert("end", "Press 'Calculate' to see savings advice.")
         self.assist_text.config(state="disabled")
 
         self.nb.bind("<<NotebookTabChanged>>", self._on_tab_change)
-
-        # Set up Enter key navigation (left to right, top to bottom)
         self._build_expenses_tab_navigation()
 
     # ==============================
     # ENTER KEY NAVIGATION
     # ==============================
     def _build_expenses_tab_navigation(self):
-        # Top row: Name -> Income -> Goal -> Category
         self.name_entry.bind("<Return>", lambda e: self.income_entry.focus_set())
         self.name_entry.bind("<KP_Enter>", lambda e: self.income_entry.focus_set())
-
         self.income_entry.bind("<Return>", lambda e: self.goal_entry.focus_set())
         self.income_entry.bind("<KP_Enter>", lambda e: self.goal_entry.focus_set())
-
         self.goal_entry.bind("<Return>", lambda e: self.category_entry.focus_set())
         self.goal_entry.bind("<KP_Enter>", lambda e: self.category_entry.focus_set())
-
-        # Expense row: Category -> Label -> Amount -> Add (via Enter)
         self.category_entry.bind("<Return>", lambda e: self.label_entry.focus_set())
         self.category_entry.bind("<KP_Enter>", lambda e: self.label_entry.focus_set())
-
         self.label_entry.bind("<Return>", lambda e: self.amount_entry.focus_set())
         self.label_entry.bind("<KP_Enter>", lambda e: self.amount_entry.focus_set())
-
         self.amount_entry.bind("<Return>", self._on_amount_enter)
         self.amount_entry.bind("<KP_Enter>", self._on_amount_enter)
-
-        # Start focus on Name
         self.name_entry.focus_set()
 
     # ==============================
@@ -339,7 +377,6 @@ class BudgetBuddyApp(tk.Tk):
         frame.columnconfigure(1, weight=2)
         frame.rowconfigure(1, weight=1)
 
-        # LEFT SIDE
         left = ttk.Frame(frame)
         left.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 10))
 
@@ -366,7 +403,7 @@ class BudgetBuddyApp(tk.Tk):
         self.add_button = ttk.Button(in_frame, text="Add", command=self._add_expense)
         self.add_button.grid(row=0, column=6, padx=8)
 
-        self.expense_list = tk.Listbox(left, height=15)
+        self.expense_list = tk.Listbox(left, height=15, bg="#111111", fg="#f4f4f4")
         self.expense_list.pack(fill="both", expand=True, padx=8, pady=8)
 
         btn_frame = ttk.Frame(left)
@@ -374,14 +411,13 @@ class BudgetBuddyApp(tk.Tk):
         self.reset_button = ttk.Button(btn_frame, text="Reset Session", command=self._reset_session)
         self.reset_button.pack(side="right")
 
-        # RIGHT SIDE (pie chart only – advice is global full-width now)
         right = ttk.Frame(frame)
         right.grid(row=0, column=1, rowspan=2, sticky="nsew")
 
         self.pie_fig = Figure(figsize=(4, 3), dpi=100)
         self.pie_ax = self.pie_fig.add_subplot(111)
         self.pie_fig.patch.set_alpha(0.0)
-        self.pie_ax.set_facecolor("none")
+        self.pie_ax.set_facecolor(self.bg_panels)
 
         self.pie_canvas = FigureCanvasTkAgg(self.pie_fig, master=right)
         self.pie_canvas.get_tk_widget().pack(fill="both", expand=True)
@@ -394,27 +430,20 @@ class BudgetBuddyApp(tk.Tk):
     def _build_history_tab(self, frame):
         columns = ("run_number", "details", "category", "label", "amount")
         self.history_table = ttk.Treeview(
-            frame,
-            columns=columns,
-            show="tree headings",
-            height=15,
+            frame, columns=columns, show="tree headings", height=15
         )
-
         self.history_table.heading("#0", text="")
         self.history_table.column("#0", width=20, stretch=False)
-
         self.history_table.heading("run_number", text="Run Number")
         self.history_table.heading("details", text="Details")
         self.history_table.heading("category", text="Category")
         self.history_table.heading("label", text="Label")
         self.history_table.heading("amount", text="Amount")
-
         self.history_table.column("run_number", width=90, anchor="center")
         self.history_table.column("details", width=650, anchor="w", stretch=True)
         self.history_table.column("category", width=120, anchor="center")
         self.history_table.column("label", width=160, anchor="center")
         self.history_table.column("amount", width=100, anchor="e")
-
         self.history_table.pack(fill="both", expand=True, padx=8, pady=8)
 
         ttk.Button(frame, text="🗑️ Clear All History", command=self._clear_history).pack(pady=8)
@@ -431,7 +460,7 @@ class BudgetBuddyApp(tk.Tk):
         if not os.path.exists(self.csv_file):
             return
 
-        runs = {}  # run_number -> aggregated data
+        runs = {}
         with open(self.csv_file, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for r in reader:
@@ -468,7 +497,6 @@ class BudgetBuddyApp(tk.Tk):
             status_text = "Reached Goal" if str(data["reached"]).lower() == "yes" else "Did Not Reach Goal"
             total_str = f"${data['total']:,.2f}"
             goal_str = f"${data['goal']:,.2f}"
-
             details_text = f"{data['name']} ({pretty_ts})"
             details_full = (
                 f"{details_text} — Income: ${data['income']:,.2f} — "
@@ -476,11 +504,7 @@ class BudgetBuddyApp(tk.Tk):
             )
 
             parent_id = self.history_table.insert(
-                "",
-                "end",
-                text="",
-                values=(rn, details_full, "", "", ""),
-                open=False,
+                "", "end", text="", values=(rn, details_full, "", "", ""), open=False
             )
 
             for category, label, amount in data["items"]:
@@ -544,10 +568,6 @@ class BudgetBuddyApp(tk.Tk):
         return "break"
 
     def _parse_expense_item(self, item):
-        """
-        Parse a line from expense_list.
-        Format: "Category | Label — $amount"
-        """
         try:
             cat_part, rest = item.split("|", 1)
             category = cat_part.strip()
@@ -559,7 +579,6 @@ class BudgetBuddyApp(tk.Tk):
             return None, None, None
 
     def _add_expense(self):
-        # amount (commas not expected here, but we can support them)
         amt = self._parse_money(self.amount_var.get())
         if amt is None:
             messagebox.showerror("Invalid", "Please enter a valid amount.")
@@ -567,20 +586,15 @@ class BudgetBuddyApp(tk.Tk):
 
         category_raw = (self.category_var.get() or "General").strip()
         label_raw = (self.label_var.get() or "Unnamed").strip()
-
-        # Auto-capitalize (title case)
         category = category_raw.title()
         label = label_raw.title()
 
-        # Nice display, no brackets
         line = f"{category} | {label} — ${amt:.2f}"
         self.expense_list.insert(tk.END, line)
 
         self._update_totals()
         self._update_pie()
-        # Assistance updates only on Calculate (per your choice B)
 
-        # Clear fields & focus category
         self.category_var.set("")
         self.label_var.set("")
         self.amount_var.set("")
@@ -599,7 +613,6 @@ class BudgetBuddyApp(tk.Tk):
             self.label_var.set("")
             self.amount_var.set("")
             self.category_entry.focus_set()
-            # Do not auto-update advice here; it updates on Calculate
 
     def _update_totals(self):
         total = 0
@@ -620,8 +633,6 @@ class BudgetBuddyApp(tk.Tk):
 
         msg = "You're doing great!" if balance > 0 else "You're over budget!"
         messagebox.showinfo("Result", msg)
-
-        # Now update assistance (only when Calculate is pressed)
         self._update_assistance()
 
     def _export_to_csv(self):
@@ -679,7 +690,7 @@ class BudgetBuddyApp(tk.Tk):
                     }
                 )
         messagebox.showinfo("Exported", "Data exported successfully!")
-        self.run_number += 1  # next run
+        self.run_number += 1
 
     def _get_next_run_number(self):
         if not os.path.exists(self.csv_file):
@@ -713,7 +724,6 @@ class BudgetBuddyApp(tk.Tk):
 
     def _update_pie(self):
         self.pie_ax.clear()
-
         totals = self._parse_expenses_by_category()
         if not totals:
             self.pie_ax.text(
@@ -759,28 +769,24 @@ class BudgetBuddyApp(tk.Tk):
         )
 
         self.pie_fig.patch.set_alpha(0.0)
-        self.pie_ax.set_facecolor("none")
-
+        self.pie_ax.set_facecolor(self.bg_panels)
         self.pie_canvas.draw()
 
     # ==============================
-    # BUDGET ASSISTANCE (Option 2)
+    # BUDGET ASSISTANCE
     # ==============================
     def _update_assistance(self):
         income = self._parse_money(self.income_var.get())
         goal = self._parse_money(self.goal_var.get()) if self.goal_var.get().strip() else 0.0
         total_expenses = self._parse_money(self.total_var.get()) or 0.0
         category_totals = self._parse_expenses_by_category()
-
         text = self._build_assistance_text(income, goal, total_expenses, category_totals)
-
         self.assist_text.config(state="normal")
         self.assist_text.delete("1.0", "end")
         self.assist_text.insert("end", text)
         self.assist_text.config(state="disabled")
 
     def _build_assistance_text(self, income, goal, total_expenses, cat_totals):
-        # Header with key numbers (Option 2)
         if income is None:
             return (
                 "Please enter a valid income and savings goal, "
@@ -803,8 +809,7 @@ class BudgetBuddyApp(tk.Tk):
         else:
             lines.append("No positive savings goal set yet.")
 
-        lines.append("")  # blank line before advice
-
+        lines.append("")
         if goal is None or goal <= 0:
             lines.append(
                 "Set a monthly savings goal to get more personalized suggestions.\n"
@@ -812,7 +817,6 @@ class BudgetBuddyApp(tk.Tk):
             )
             return "\n".join(lines)
 
-        # If goal is met or exceeded
         if balance >= goal:
             extra = balance - goal
             lines.append("Amazing job! You reached your savings goal this month 🎉")
@@ -827,9 +831,7 @@ class BudgetBuddyApp(tk.Tk):
             )
             return "\n".join(lines)
 
-        # If we are here, user is short of goal
         shortfall = goal - balance
-
         if not cat_totals:
             lines.append(
                 "You're a bit short of your goal, and there are no detailed expenses added yet.\n"
@@ -837,7 +839,6 @@ class BudgetBuddyApp(tk.Tk):
             )
             return "\n".join(lines)
 
-        # Group categories by type
         non_essential = []
         lux_essential = []
         essential = []
@@ -859,15 +860,13 @@ class BudgetBuddyApp(tk.Tk):
         essential.sort(key=lambda x: x[1], reverse=True)
         other.sort(key=lambda x: x[1], reverse=True)
 
-        # Friendly guidance
         lines.append("You're doing your best, and that's what matters. 💚")
         lines.append(
-            f"To move closer to your savings goal, let's gently adjust your spending "
-            f"starting with non-essential areas first."
+            "To move closer to your savings goal, let's gently adjust your spending "
+            "starting with non-essential areas first."
         )
 
         remaining_gap = shortfall
-
         if non_essential:
             lines.append("")
             lines.append("🔸 Start with non-essential spending (easiest to adjust):")
@@ -884,7 +883,6 @@ class BudgetBuddyApp(tk.Tk):
                 if remaining_gap <= 0:
                     break
 
-        # If gap remains, suggest lux essentials
         if remaining_gap > 0 and lux_essential:
             lines.append("")
             lines.append(
@@ -904,7 +902,6 @@ class BudgetBuddyApp(tk.Tk):
                 if remaining_gap <= 0:
                     break
 
-        # If it’s still not enough, be gentle about essentials
         if remaining_gap > 0 and essential:
             lines.append("")
             lines.append(
@@ -917,7 +914,6 @@ class BudgetBuddyApp(tk.Tk):
                     "or planning ahead to reduce this over time."
                 )
 
-        # If even then the gap is large, suggest adjusting goal
         if remaining_gap > 0:
             lines.append("")
             lines.append(
@@ -929,7 +925,6 @@ class BudgetBuddyApp(tk.Tk):
 
         lines.append("")
         lines.append("You're on the right track. Even small changes add up over time. You've got this! 💪")
-
         return "\n".join(lines)
 
     # ==============================
